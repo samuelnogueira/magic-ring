@@ -109,9 +109,14 @@
     <div class="flex-1 overflow-y-auto p-4 space-y-4">
       <div class="flex items-center justify-between">
         <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Crochet Symbols</h2>
-        <button onclick="selectSymbol('eraser')" id="btnEraser" class="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 border border-slate-200 rounded flex items-center gap-1">
-          <i data-lucide="eraser" class="w-3.5 h-3.5"></i> Eraser
-        </button>
+        <div class="flex items-center gap-1">
+          <button onclick="selectSymbol('select')" id="btnSelect" class="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 border border-slate-200 rounded flex items-center gap-1" title="Box Select / Multi-Select">
+            <i data-lucide="mouse-pointer-click" class="w-3.5 h-3.5"></i> Select
+          </button>
+          <button onclick="selectSymbol('eraser')" id="btnEraser" class="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 border border-slate-200 rounded flex items-center gap-1">
+            <i data-lucide="eraser" class="w-3.5 h-3.5"></i> Eraser
+          </button>
+        </div>
       </div>
 
       <div id="paletteGrid" class="grid grid-cols-2 gap-2">
@@ -173,6 +178,20 @@
       <button onclick="zoom(-0.1)" class="p-1.5 hover:bg-slate-100 rounded text-slate-700" title="Zoom Out"><i data-lucide="zoom-out" class="w-4 h-4"></i></button>
     </div>
 
+    <!-- Floating Selection Action Bar -->
+    <div id="selectionToolbar" class="hidden absolute top-4 right-4 bg-white/95 backdrop-blur-xs border border-indigo-200 shadow-lg rounded-lg p-2 z-20 flex items-center gap-2 text-xs">
+      <span id="selectionCountText" class="font-semibold text-indigo-700 px-1">0 selected</span>
+      <button onclick="rotateSelectedStitches(15)" class="px-2 py-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded font-medium flex items-center gap-1 shadow-xs" title="Rotate +15°">
+        <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i> +15°
+      </button>
+      <button onclick="deleteSelectedStitches()" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded font-medium flex items-center gap-1 shadow-xs">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Delete
+      </button>
+      <button onclick="clearSelection()" class="px-2 py-1 text-slate-600 hover:bg-slate-100 rounded border border-slate-200">
+        Deselect
+      </button>
+    </div>
+
     <!-- MAIN SVG CANVAS -->
     <svg id="svgCanvas" class="w-full h-full cursor-crosshair select-none" xmlns="http://www.w3.org/2000/svg">
       <g id="viewportGroup">
@@ -180,6 +199,8 @@
         <g id="gridLayer"></g>
         <!-- Stitches Layer -->
         <g id="stitchesLayer"></g>
+        <!-- Selection Layer -->
+        <g id="selectionLayer"></g>
         <!-- Cursor Preview Layer -->
         <g id="previewLayer" opacity="0.5"></g>
       </g>
@@ -271,6 +292,14 @@
     rotation: 'auto',
     scale: 1.0,
     stitches: [], // Array of { id, type, x, y, angle, color, scale }
+    selectedStitchIds: new Set(),
+    isBoxSelecting: false,
+    boxStart: { x: 0, y: 0 },
+    boxEnd: { x: 0, y: 0 },
+    isDraggingSelection: false,
+    dragStart: { x: 0, y: 0 },
+    dragRefStitchId: null,
+    dragStitchPositions: new Map(),
     history: [],
     zoomLevel: 1.0,
     panX: 0,
@@ -323,11 +352,27 @@
     const btn = document.getElementById(`btn_sym_${key}`);
     if (btn) btn.classList.add('active');
 
+    const btnSelect = document.getElementById('btnSelect');
     const btnEraser = document.getElementById('btnEraser');
-    if (key === 'eraser') {
-      btnEraser.classList.add('bg-rose-100', 'border-rose-300', 'text-rose-700');
-    } else {
-      btnEraser.classList.remove('bg-rose-100', 'border-rose-300', 'text-rose-700');
+
+    if (btnSelect) {
+      if (key === 'select') {
+        btnSelect.classList.add('bg-indigo-100', 'border-indigo-300', 'text-indigo-700');
+      } else {
+        btnSelect.classList.remove('bg-indigo-100', 'border-indigo-300', 'text-indigo-700');
+      }
+    }
+
+    if (btnEraser) {
+      if (key === 'eraser') {
+        btnEraser.classList.add('bg-rose-100', 'border-rose-300', 'text-rose-700');
+      } else {
+        btnEraser.classList.remove('bg-rose-100', 'border-rose-300', 'text-rose-700');
+      }
+    }
+
+    if (key !== 'select') {
+      clearSelection();
     }
   }
 
@@ -462,7 +507,12 @@
         state.startPanY = e.clientY - state.panY;
         svgCanvas.style.cursor = 'grabbing';
       } else if (e.button === 0) {
-        handleCanvasClick(e);
+        const coords = getSVGCoords(e);
+        if (state.selectedSymbol === 'select') {
+          handleSelectMouseDown(coords, e);
+        } else {
+          handleCanvasClick(e);
+        }
       }
     });
 
@@ -471,20 +521,200 @@
         state.panX = e.clientX - state.startPanX;
         state.panY = e.clientY - state.startPanY;
         updateTransform();
+      } else if (state.isBoxSelecting) {
+        const coords = getSVGCoords(e);
+        state.boxEnd = coords;
+        updateBoxSelection(e.shiftKey);
+      } else if (state.isDraggingSelection) {
+        const coords = getSVGCoords(e);
+        const rawDx = coords.x - state.dragStart.x;
+        const rawDy = coords.y - state.dragStart.y;
+
+        const refId = state.dragRefStitchId || Array.from(state.selectedStitchIds)[0];
+        const refInitialPos = state.dragStitchPositions.get(refId);
+
+        if (refInitialPos) {
+          const targetRefX = refInitialPos.x + rawDx;
+          const targetRefY = refInitialPos.y + rawDy;
+          const snappedRef = snapToGrid(targetRefX, targetRefY);
+
+          const snapDx = snappedRef.x - refInitialPos.x;
+          const snapDy = snappedRef.y - refInitialPos.y;
+
+          state.dragStitchPositions.forEach((pos, stId) => {
+            const st = state.stitches.find(s => s.id === stId);
+            if (st) {
+              st.x = pos.x + snapDx;
+              st.y = pos.y + snapDy;
+              if (stId === refId && state.rotation === 'auto' && state.selectedStitchIds.size === 1) {
+                st.angle = snappedRef.angle;
+              }
+            }
+          });
+          renderStitches();
+        }
       } else {
         updateHoverPreview(e);
       }
     });
 
     window.addEventListener('mouseup', () => {
+      if (state.isBoxSelecting) {
+        state.isBoxSelecting = false;
+        const marquee = document.getElementById('boxMarquee');
+        if (marquee) marquee.remove();
+        renderStitches();
+      }
+      if (state.isDraggingSelection) {
+        state.isDraggingSelection = false;
+        state.dragRefStitchId = null;
+        saveHistory();
+        renderStitches();
+      }
       state.isPanning = false;
-      svgCanvas.style.cursor = 'crosshair';
+      svgCanvas.style.cursor = state.selectedSymbol === 'select' ? 'default' : 'crosshair';
+    });
+
+    // Keyboard Shortcuts for Selection
+    window.addEventListener('keydown', (e) => {
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (state.selectedStitchIds.size > 0) {
+          e.preventDefault();
+          deleteSelectedStitches();
+        }
+      } else if (e.key === 'Escape') {
+        clearSelection();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        selectAllStitches();
+      }
     });
 
     // Controls Binding
-    document.getElementById('stitchColor').addEventListener('input', (e) => state.color = e.target.value);
+    document.getElementById('stitchColor').addEventListener('input', (e) => {
+      state.color = e.target.value;
+      if (state.selectedStitchIds.size > 0) {
+        saveHistory();
+        state.stitches.forEach(st => {
+          if (state.selectedStitchIds.has(st.id)) st.color = state.color;
+        });
+        renderStitches();
+      }
+    });
     document.getElementById('stitchRotation').addEventListener('change', (e) => state.rotation = e.target.value);
     document.getElementById('symbolScale').addEventListener('input', (e) => state.scale = parseFloat(e.target.value));
+  }
+
+  function handleSelectMouseDown(coords, e) {
+    // Check if clicked near an existing stitch
+    const hitStitch = state.stitches.find(s => Math.hypot(s.x - coords.x, s.y - coords.y) < 18);
+
+    if (hitStitch) {
+      if (!state.selectedStitchIds.has(hitStitch.id)) {
+        if (!e.shiftKey) state.selectedStitchIds.clear();
+        state.selectedStitchIds.add(hitStitch.id);
+      }
+      // Prepare drag moving
+      state.isDraggingSelection = true;
+      state.dragStart = coords;
+      state.dragRefStitchId = hitStitch.id;
+      state.dragStitchPositions.clear();
+      state.selectedStitchIds.forEach(id => {
+        const st = state.stitches.find(s => s.id === id);
+        if (st) state.dragStitchPositions.set(id, { x: st.x, y: st.y, angle: st.angle });
+      });
+      renderStitches();
+    } else {
+      // Clicked on empty canvas space -> start box select
+      if (!e.shiftKey) state.selectedStitchIds.clear();
+      state.isBoxSelecting = true;
+      state.boxStart = coords;
+      state.boxEnd = coords;
+      renderStitches();
+    }
+  }
+
+  function updateBoxSelection(shiftKey) {
+    const minX = Math.min(state.boxStart.x, state.boxEnd.x);
+    const maxX = Math.max(state.boxStart.x, state.boxEnd.x);
+    const minY = Math.min(state.boxStart.y, state.boxEnd.y);
+    const maxY = Math.max(state.boxStart.y, state.boxEnd.y);
+
+    if (!shiftKey) {
+      state.selectedStitchIds.clear();
+    }
+
+    state.stitches.forEach(st => {
+      if (st.x >= minX && st.x <= maxX && st.y >= minY && st.y <= maxY) {
+        state.selectedStitchIds.add(st.id);
+      }
+    });
+
+    renderStitches();
+
+    // Draw box marquee
+    const selectionLayer = document.getElementById('selectionLayer');
+    if (selectionLayer) {
+      let marquee = document.getElementById('boxMarquee');
+      if (!marquee) {
+        marquee = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        marquee.id = 'boxMarquee';
+        marquee.setAttribute("fill", "rgba(99, 102, 241, 0.15)");
+        marquee.setAttribute("stroke", "#4f46e5");
+        marquee.setAttribute("stroke-width", "1.5");
+        marquee.setAttribute("stroke-dasharray", "4 3");
+        selectionLayer.appendChild(marquee);
+      }
+      marquee.setAttribute("x", minX);
+      marquee.setAttribute("y", minY);
+      marquee.setAttribute("width", maxX - minX);
+      marquee.setAttribute("height", maxY - minY);
+    }
+  }
+
+  function deleteSelectedStitches() {
+    if (state.selectedStitchIds.size === 0) return;
+    saveHistory();
+    state.stitches = state.stitches.filter(st => !state.selectedStitchIds.has(st.id));
+    state.selectedStitchIds.clear();
+    renderStitches();
+  }
+
+  function rotateSelectedStitches(angleDelta) {
+    if (state.selectedStitchIds.size === 0) return;
+    saveHistory();
+    state.stitches.forEach(st => {
+      if (state.selectedStitchIds.has(st.id)) {
+        st.angle = (st.angle + angleDelta) % 360;
+      }
+    });
+    renderStitches();
+  }
+
+  function clearSelection() {
+    state.selectedStitchIds.clear();
+    renderStitches();
+  }
+
+  function selectAllStitches() {
+    state.selectedStitchIds.clear();
+    state.stitches.forEach(st => state.selectedStitchIds.add(st.id));
+    renderStitches();
+  }
+
+  function updateSelectionToolbar() {
+    const toolbar = document.getElementById('selectionToolbar');
+    const countText = document.getElementById('selectionCountText');
+    if (!toolbar || !countText) return;
+
+    if (state.selectedStitchIds.size > 0) {
+      toolbar.classList.remove('hidden');
+      countText.textContent = `${state.selectedStitchIds.size} selected`;
+    } else {
+      toolbar.classList.add('hidden');
+    }
   }
 
   function getSVGCoords(e) {
@@ -571,7 +801,7 @@
 
   function updateHoverPreview(e) {
     previewLayer.innerHTML = '';
-    if (state.selectedSymbol === 'eraser') return;
+    if (state.selectedSymbol === 'eraser' || state.selectedSymbol === 'select') return;
 
     const coords = getSVGCoords(e);
     const snapped = snapToGrid(coords.x, coords.y);
@@ -594,15 +824,23 @@
       const sym = SYMBOLS[st.type];
       if (!sym) return;
 
+      const isSelected = state.selectedStitchIds.has(st.id);
+
       const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
       g.setAttribute("transform", `translate(${st.x}, ${st.y}) rotate(${st.angle}) scale(${st.scale})`);
       g.setAttribute("color", st.color);
-      g.innerHTML = sym.svg;
+
+      if (isSelected) {
+        g.innerHTML = `<circle cx="0" cy="0" r="16" stroke="#6366f1" stroke-width="1.8" stroke-dasharray="3 3" fill="rgba(99, 102, 241, 0.25)"/>` + sym.svg;
+      } else {
+        g.innerHTML = sym.svg;
+      }
 
       stitchesLayer.appendChild(g);
     });
 
     updateStitchSummary();
+    updateSelectionToolbar();
   }
 
   function updateStitchSummary() {
