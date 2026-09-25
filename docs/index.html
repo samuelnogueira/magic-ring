@@ -774,13 +774,23 @@
 
     if (state.selectedSymbol === 'eraser') {
       // Remove stitch near click
-      const index = state.stitches.findIndex(s => Math.hypot(s.x - snapped.x, s.y - snapped.y) < 15);
+      const index = state.stitches.findIndex(s => 
+        Math.hypot(s.x - snapped.x, s.y - snapped.y) < 15 || 
+        Math.hypot(s.x - coords.x, s.y - coords.y) < 15
+      );
       if (index !== -1) {
         saveHistory();
         state.stitches.splice(index, 1);
         renderStitches();
       }
     } else {
+      // Prevent placing duplicate symbols in the same spot
+      const exists = state.stitches.some(s => 
+        Math.hypot(s.x - snapped.x, s.y - snapped.y) < 8 ||
+        Math.hypot(s.x - coords.x, s.y - coords.y) < 14
+      );
+      if (exists) return;
+
       // Place Stitch
       saveHistory();
       const newStitch = {
