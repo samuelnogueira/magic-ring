@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Crochet Chart Designer</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .grid-bg {
+      background-color: #f8fafc;
+      background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+      background-size: 20px 20px;
+    }
+    .symbol-btn {
+      transition: all 0.15s ease;
+    }
+    .symbol-btn.active {
+      border-color: #6366f1;
+      background-color: #e0e7ff;
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.4);
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 h-screen flex flex-col overflow-hidden">
+
+<!-- TOP NAVBAR -->
+<header class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between z-10 shadow-sm">
+  <div class="flex items-center gap-3">
+    <div class="p-2 bg-indigo-600 text-white rounded-lg shadow-sm">
+      <i data-lucide="disc"></i>
+    </div>
+    <div>
+      <h1 class="text-lg font-bold text-slate-900 leading-tight">Crochet Studio</h1>
+      <p class="text-xs text-slate-500">Radial & Flat Pattern Designer</p>
+    </div>
+  </div>
+
+  <!-- Mode Selector & Controls -->
+  <div class="flex items-center gap-4">
+    <!-- Grid Mode Switcher -->
+    <div class="bg-slate-100 p-1 rounded-lg border border-slate-200 flex items-center gap-1">
+      <button id="btnGridNormal" onclick="setGridType('normal')" class="px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1.5 transition bg-white shadow-xs text-indigo-600">
+        <i data-lucide="grid-3x3" class="w-4 h-4"></i> Normal Grid
+      </button>
+      <button id="btnGridRadial" onclick="setGridType('radial')" class="px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1.5 transition text-slate-600 hover:text-slate-900">
+        <i data-lucide="sun" class="w-4 h-4"></i> Radial / Round
+      </button>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="flex items-center gap-2 border-l border-slate-200 pl-4">
+      <button onclick="undo()" class="p-2 text-slate-600 hover:bg-slate-100 rounded-lg border border-slate-200" title="Undo (Ctrl+Z)">
+        <i data-lucide="undo-2" class="w-4 h-4"></i>
+      </button>
+      <button onclick="clearCanvas()" class="px-3 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg flex items-center gap-1">
+        <i data-lucide="trash-2" class="w-4 h-4"></i> Clear
+      </button>
+      <div class="h-6 w-px bg-slate-200"></div>
+      <button onclick="exportPNG()" class="px-3 py-1.5 text-xs font-medium bg-white hover:bg-slate-50 border border-slate-200 rounded-lg flex items-center gap-1 text-slate-700 shadow-xs">
+        <i data-lucide="image" class="w-4 h-4"></i> Export PNG
+      </button>
+      <button onclick="exportSVG()" class="px-3 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center gap-1 shadow-sm">
+        <i data-lucide="download" class="w-4 h-4"></i> Export SVG
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- MAIN CONTENT AREA -->
+<div class="flex-1 flex overflow-hidden">
+
+  <!-- LEFT SIDEBAR: STITCH SYMBOL PALETTE -->
+  <aside class="w-80 bg-white border-r border-slate-200 flex flex-col z-10 shadow-xs overflow-hidden">
+    <!-- Toolbar Controls -->
+    <div class="p-4 border-b border-slate-200 space-y-3 bg-slate-50/50">
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-semibold uppercase tracking-wider text-slate-500">Stitch Settings</span>
+        <div class="flex items-center gap-2">
+          <label for="stitchColor" class="text-xs text-slate-500">Color:</label>
+          <input type="color" id="stitchColor" value="#1e293b" class="w-6 h-6 rounded cursor-pointer border border-slate-300">
+        </div>
+      </div>
+
+      <!-- Rotation & Size -->
+      <div class="grid grid-cols-2 gap-2 text-xs">
+        <div>
+          <label class="text-slate-500 block mb-1">Rotation (°)</label>
+          <select id="stitchRotation" class="w-full bg-white border border-slate-200 rounded-md p-1.5 focus:ring-2 focus:ring-indigo-500">
+            <option value="auto">Auto (Radial Angle)</option>
+            <option value="0">0° (Upright)</option>
+            <option value="45">45°</option>
+            <option value="90">90°</option>
+            <option value="180">180°</option>
+            <option value="270">270°</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-slate-500 block mb-1">Symbol Size</label>
+          <input type="range" id="symbolScale" min="0.6" max="2.0" step="0.1" value="1.0" class="w-full mt-2">
+        </div>
+      </div>
+    </div>
+
+    <!-- Symbols Palette Grid -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400">Crochet Symbols</h2>
+        <button onclick="selectSymbol('eraser')" id="btnEraser" class="px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 border border-slate-200 rounded flex items-center gap-1">
+          <i data-lucide="eraser" class="w-3.5 h-3.5"></i> Eraser
+        </button>
+      </div>
+
+      <div id="paletteGrid" class="grid grid-cols-2 gap-2">
+        <!-- Symbols loaded via JavaScript -->
+      </div>
+    </div>
+
+    <!-- Stitch Count Summary -->
+    <div class="p-4 bg-slate-50 border-t border-slate-200">
+      <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center justify-between">
+        <span>Stitch Counter</span>
+        <span id="totalStitchCount" class="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-[10px]">0 total</span>
+      </h3>
+      <div id="stitchSummaryList" class="text-xs text-slate-600 max-h-28 overflow-y-auto space-y-1">
+        <p class="text-slate-400 italic">No stitches placed yet.</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CENTER CANVAS AREA -->
+  <main class="flex-1 relative grid-bg flex items-center justify-center overflow-hidden" id="canvasContainer">
+    <!-- Floating Grid Settings Bar -->
+    <div class="absolute top-4 left-4 bg-white/95 backdrop-blur-xs border border-slate-200 shadow-md rounded-lg p-3 z-10 flex items-center gap-4 text-xs">
+      <div id="normalControls" class="flex items-center gap-3">
+        <span class="font-semibold text-slate-700">Grid:</span>
+        <label>Rows: <input type="number" id="inputRows" min="5" max="50" value="20" class="w-12 border border-slate-200 rounded p-1 text-center" onchange="updateGrid()"></label>
+        <label>Cols: <input type="number" id="inputCols" min="5" max="50" value="20" class="w-12 border border-slate-200 rounded p-1 text-center" onchange="updateGrid()"></label>
+        <label>Spacing: <input type="number" id="inputSpacing" min="15" max="60" value="30" class="w-12 border border-slate-200 rounded p-1 text-center" onchange="updateGrid()"></label>
+      </div>
+
+      <div id="radialControls" class="hidden flex items-center gap-3">
+        <span class="font-semibold text-slate-700">Radial:</span>
+        <label>Rounds: <input type="number" id="inputRounds" min="2" max="20" value="8" class="w-12 border border-slate-200 rounded p-1 text-center" onchange="updateGrid()"></label>
+        <label>Sectors/Spokes:
+          <select id="inputSectors" class="border border-slate-200 rounded p-1 text-center" onchange="updateGrid()">
+            <option value="6">6 (Hexagon)</option>
+            <option value="8" selected>8 (Octagon / Standard)</option>
+            <option value="12">12 (Clockwise)</option>
+            <option value="16">16 (Dense Round)</option>
+            <option value="24">24 (Fine Detailed)</option>
+          </select>
+        </label>
+        <label>Radius: <input type="number" id="inputRadius" min="20" max="60" value="35" class="w-12 border border-slate-200 rounded p-1 text-center" onchange="updateGrid()"></label>
+      </div>
+
+      <div class="h-4 w-px bg-slate-200"></div>
+
+      <!-- Snap & Guidelines -->
+      <label class="flex items-center gap-1.5 cursor-pointer text-slate-600">
+        <input type="checkbox" id="chkShowGrid" checked onchange="updateGrid()" class="rounded border-slate-300 text-indigo-600">
+        Show Grid Lines
+      </label>
+    </div>
+
+    <!-- Zoom & Pan Controls -->
+    <div class="absolute bottom-4 right-4 bg-white/95 backdrop-blur-xs border border-slate-200 shadow-md rounded-lg p-1.5 z-10 flex items-center gap-1">
+      <button onclick="zoom(0.1)" class="p-1.5 hover:bg-slate-100 rounded text-slate-700" title="Zoom In"><i data-lucide="zoom-in" class="w-4 h-4"></i></button>
+      <button onclick="resetZoom()" class="px-2 py-1 text-xs hover:bg-slate-100 rounded text-slate-700 font-medium" id="zoomText">100%</button>
+      <button onclick="zoom(-0.1)" class="p-1.5 hover:bg-slate-100 rounded text-slate-700" title="Zoom Out"><i data-lucide="zoom-out" class="w-4 h-4"></i></button>
+    </div>
+
+    <!-- MAIN SVG CANVAS -->
+    <svg id="svgCanvas" class="w-full h-full cursor-crosshair select-none" xmlns="http://www.w3.org/2000/svg">
+      <g id="viewportGroup">
+        <!-- Grid Layer -->
+        <g id="gridLayer"></g>
+        <!-- Stitches Layer -->
+        <g id="stitchesLayer"></g>
+        <!-- Cursor Preview Layer -->
+        <g id="previewLayer" opacity="0.5"></g>
+      </g>
+    </svg>
+  </main>
+</div>
+
+<script>
+  // --- CROCHET SYMBOLS DEFINITIONS (SVG PATHS) ---
+  const SYMBOLS = {
+    ch: {
+      name: 'Chain (ch)',
+      code: 'ch',
+      svg: `<ellipse cx="0" cy="0" rx="7" ry="3.5" stroke="currentColor" stroke-width="2" fill="none"/>`
+    },
+    slst: {
+      name: 'Slip Stitch (sl st)',
+      code: 'sl st',
+      svg: `<circle cx="0" cy="0" r="4" fill="currentColor"/>`
+    },
+    sc: {
+      name: 'Single Crochet (sc)',
+      code: 'sc',
+      svg: `<path d="M-5 0 H5 M0 -5 V5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`
+    },
+    sc_x: {
+      name: 'Single Crochet (x)',
+      code: 'sc (x)',
+      svg: `<path d="M-4 -4 L4 4 M-4 4 L4 -4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`
+    },
+    hdc: {
+      name: 'Half Double Crochet (hdc)',
+      code: 'hdc',
+      svg: `<path d="M0 8 V-8 M-7 -8 H7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`
+    },
+    dc: {
+      name: 'Double Crochet (dc)',
+      code: 'dc',
+      svg: `<path d="M0 10 V-10 M-7 -10 H7 M-4 1 L4 -2" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`
+    },
+    tr: {
+      name: 'Treble Crochet (tr)',
+      code: 'tr',
+      svg: `<path d="M0 12 V-12 M-7 -12 H7 M-4 -2 L4 -5 M-4 4 L4 1" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`
+    },
+    dtr: {
+      name: 'Double Treble (dtr)',
+      code: 'dtr',
+      svg: `<path d="M0 14 V-14 M-7 -14 H7 M-4 -6 L4 -9 M-4 0 L4 -3 M-4 6 L4 3" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>`
+    },
+    inc_dc: {
+      name: '2-dc Increase (V)',
+      code: '2-dc inc',
+      svg: `<path d="M-7 -10 L0 10 L7 -10 M-9 -10 H-5 M5 -10 H9 M-6 -1 L-2 -3 M2 -3 L6 -1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`
+    },
+    dec_dc: {
+      name: '2-dc Decrease (dc2tog)',
+      code: 'dc2tog',
+      svg: `<path d="M-7 10 L0 -10 L7 10 M-5 -10 H5 M-6 2 L-2 4 M2 4 L6 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`
+    },
+    fpdc: {
+      name: 'Front Post dc (FPdc)',
+      code: 'FPdc',
+      svg: `<path d="M0 8 V-8 M-7 -8 H7 M-4 1 L4 -2 M0 8 A 5 5 0 0 1 -8 8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>`
+    },
+    bpdc: {
+      name: 'Back Post dc (BPdc)',
+      code: 'BPdc',
+      svg: `<path d="M0 8 V-8 M-7 -8 H7 M-4 1 L4 -2 M0 8 A 5 5 0 0 0 8 8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>`
+    },
+    magic_ring: {
+      name: 'Magic Ring',
+      code: 'magic ring',
+      svg: `<circle cx="0" cy="0" r="12" stroke="currentColor" stroke-width="2" fill="none" stroke-dasharray="4 3"/>
+              <path d="M12 -2 L15 2 L10 4" fill="currentColor"/>`
+    },
+    picot: {
+      name: 'Picot (3 ch)',
+      code: 'picot',
+      svg: `<path d="M0 0 C-6 -8, -6 -16, 0 -20 C6 -16, 6 -8, 0 0 Z" stroke="currentColor" stroke-width="1.8" fill="none"/>`
+    }
+  };
+
+  // --- STATE MANAGEMENT ---
+  let state = {
+    gridType: 'normal', // 'normal' or 'radial'
+    selectedSymbol: 'dc',
+    color: '#1e293b',
+    rotation: 'auto',
+    scale: 1.0,
+    stitches: [], // Array of { id, type, x, y, angle, color, scale }
+    history: [],
+    zoomLevel: 1.0,
+    panX: 0,
+    panY: 0,
+    isPanning: false,
+    startPanX: 0,
+    startPanY: 0
+  };
+
+  // DOM Elements
+  const svgCanvas = document.getElementById('svgCanvas');
+  const viewportGroup = document.getElementById('viewportGroup');
+  const gridLayer = document.getElementById('gridLayer');
+  const stitchesLayer = document.getElementById('stitchesLayer');
+  const previewLayer = document.getElementById('previewLayer');
+  const paletteGrid = document.getElementById('paletteGrid');
+
+  // --- INITIALIZATION ---
+  window.addEventListener('DOMContentLoaded', () => {
+    lucide.createIcons();
+    initPalette();
+    updateGrid();
+    centerCanvas();
+    setupEventListeners();
+  });
+
+  // Populate Sidebar Palette
+  function initPalette() {
+    paletteGrid.innerHTML = '';
+    Object.keys(SYMBOLS).forEach(key => {
+      const sym = SYMBOLS[key];
+      const btn = document.createElement('button');
+      btn.id = `btn_sym_${key}`;
+      btn.className = `symbol-btn p-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex flex-col items-center justify-center text-center gap-1.5 ${state.selectedSymbol === key ? 'active' : ''}`;
+      btn.onclick = () => selectSymbol(key);
+
+      btn.innerHTML = `
+          <svg class="w-8 h-8 text-slate-800" viewBox="-16 -16 32 32">
+            ${sym.svg}
+          </svg>
+          <span class="text-[11px] font-medium leading-tight text-slate-700">${sym.name}</span>
+        `;
+      paletteGrid.appendChild(btn);
+    });
+  }
+
+  function selectSymbol(key) {
+    state.selectedSymbol = key;
+    document.querySelectorAll('.symbol-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById(`btn_sym_${key}`);
+    if (btn) btn.classList.add('active');
+
+    const btnEraser = document.getElementById('btnEraser');
+    if (key === 'eraser') {
+      btnEraser.classList.add('bg-rose-100', 'border-rose-300', 'text-rose-700');
+    } else {
+      btnEraser.classList.remove('bg-rose-100', 'border-rose-300', 'text-rose-700');
+    }
+  }
+
+  // --- GRID TYPE & RENDERING ---
+  function setGridType(type) {
+    state.gridType = type;
+    const btnNormal = document.getElementById('btnGridNormal');
+    const btnRadial = document.getElementById('btnGridRadial');
+    const normalControls = document.getElementById('normalControls');
+    const radialControls = document.getElementById('radialControls');
+
+    if (type === 'normal') {
+      btnNormal.className = "px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1.5 transition bg-white shadow-xs text-indigo-600";
+      btnRadial.className = "px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1.5 transition text-slate-600 hover:text-slate-900";
+      normalControls.classList.remove('hidden');
+      radialControls.classList.add('hidden');
+    } else {
+      btnRadial.className = "px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1.5 transition bg-white shadow-xs text-indigo-600";
+      btnNormal.className = "px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1.5 transition text-slate-600 hover:text-slate-900";
+      radialControls.classList.remove('hidden');
+      normalControls.classList.add('hidden');
+    }
+
+    updateGrid();
+  }
+
+  function updateGrid() {
+    gridLayer.innerHTML = '';
+    const showGrid = document.getElementById('chkShowGrid').checked;
+    if (!showGrid) return;
+
+    if (state.gridType === 'normal') {
+      renderNormalGrid();
+    } else {
+      renderRadialGrid();
+    }
+  }
+
+  function renderNormalGrid() {
+    const rows = parseInt(document.getElementById('inputRows').value) || 20;
+    const cols = parseInt(document.getElementById('inputCols').value) || 20;
+    const spacing = parseInt(document.getElementById('inputSpacing').value) || 30;
+
+    const width = cols * spacing;
+    const height = rows * spacing;
+    const startX = -width / 2;
+    const startY = -height / 2;
+
+    let pathData = '';
+    for (let r = 0; r <= rows; r++) {
+      const y = startY + r * spacing;
+      pathData += `M ${startX} ${y} H ${startX + width} `;
+    }
+    for (let c = 0; c <= cols; c++) {
+      const x = startX + c * spacing;
+      pathData += `M ${x} ${startY} V ${startY + height} `;
+    }
+
+    const gridPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    gridPath.setAttribute("d", pathData);
+    gridPath.setAttribute("stroke", "#cbd5e1");
+    gridPath.setAttribute("stroke-width", "1");
+    gridPath.setAttribute("fill", "none");
+    gridLayer.appendChild(gridPath);
+
+    // Center mark
+    const centerDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    centerDot.setAttribute("cx", "0");
+    centerDot.setAttribute("cy", "0");
+    centerDot.setAttribute("r", "3");
+    centerDot.setAttribute("fill", "#6366f1");
+    gridLayer.appendChild(centerDot);
+  }
+
+  function renderRadialGrid() {
+    const rounds = parseInt(document.getElementById('inputRounds').value) || 8;
+    const sectors = parseInt(document.getElementById('inputSectors').value) || 8;
+    const radiusStep = parseInt(document.getElementById('inputRadius').value) || 35;
+
+    const maxRadius = rounds * radiusStep;
+
+    // Concentric Circles (Rounds)
+    for (let r = 1; r <= rounds; r++) {
+      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("cx", "0");
+      circle.setAttribute("cy", "0");
+      circle.setAttribute("r", (r * radiusStep).toString());
+      circle.setAttribute("stroke", r % 5 === 0 ? "#94a3b8" : "#cbd5e1");
+      circle.setAttribute("stroke-width", r % 5 === 0 ? "1.5" : "1");
+      circle.setAttribute("stroke-dasharray", r % 2 === 0 ? "none" : "3,3");
+      circle.setAttribute("fill", "none");
+      gridLayer.appendChild(circle);
+    }
+
+    // Radial Spokes
+    let spokeData = '';
+    for (let i = 0; i < sectors; i++) {
+      const angle = (i * 360 / sectors) * (Math.PI / 180);
+      const x2 = maxRadius * Math.cos(angle);
+      const y2 = maxRadius * Math.sin(angle);
+      spokeData += `M 0 0 L ${x2} ${y2} `;
+    }
+
+    const spokePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    spokePath.setAttribute("d", spokeData);
+    spokePath.setAttribute("stroke", "#cbd5e1");
+    spokePath.setAttribute("stroke-width", "1");
+    gridLayer.appendChild(spokePath);
+
+    // Center Ring
+    const centerDot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    centerDot.setAttribute("cx", "0");
+    centerDot.setAttribute("cy", "0");
+    centerDot.setAttribute("r", "4");
+    centerDot.setAttribute("fill", "#6366f1");
+    gridLayer.appendChild(centerDot);
+  }
+
+  // --- CANVAS INTERACTION & PLACEMENT ---
+  function setupEventListeners() {
+    // Zoom & Pan
+    svgCanvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.1 : -0.1;
+      zoom(delta);
+    });
+
+    svgCanvas.addEventListener('mousedown', (e) => {
+      if (e.button === 1 || e.shiftKey) { // Middle click or Shift+click for panning
+        state.isPanning = true;
+        state.startPanX = e.clientX - state.panX;
+        state.startPanY = e.clientY - state.panY;
+        svgCanvas.style.cursor = 'grabbing';
+      } else if (e.button === 0) {
+        handleCanvasClick(e);
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (state.isPanning) {
+        state.panX = e.clientX - state.startPanX;
+        state.panY = e.clientY - state.startPanY;
+        updateTransform();
+      } else {
+        updateHoverPreview(e);
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      state.isPanning = false;
+      svgCanvas.style.cursor = 'crosshair';
+    });
+
+    // Controls Binding
+    document.getElementById('stitchColor').addEventListener('input', (e) => state.color = e.target.value);
+    document.getElementById('stitchRotation').addEventListener('change', (e) => state.rotation = e.target.value);
+    document.getElementById('symbolScale').addEventListener('input', (e) => state.scale = parseFloat(e.target.value));
+  }
+
+  function getSVGCoords(e) {
+    const rect = svgCanvas.getBoundingClientRect();
+    const rawX = e.clientX - rect.left;
+    const rawY = e.clientY - rect.top;
+
+    // Un-project zoom and pan
+    const x = (rawX - rect.width / 2 - state.panX) / state.zoomLevel;
+    const y = (rawY - rect.height / 2 - state.panY) / state.zoomLevel;
+    return { x, y };
+  }
+
+  function snapToGrid(x, y) {
+    if (state.gridType === 'normal') {
+      const spacing = parseInt(document.getElementById('inputSpacing').value) || 30;
+      const snappedX = Math.round(x / spacing) * spacing;
+      const snappedY = Math.round(y / spacing) * spacing;
+
+      let angle = 0;
+      if (state.rotation !== 'auto') {
+        angle = parseInt(state.rotation);
+      }
+      return { x: snappedX, y: snappedY, angle };
+    } else {
+      // Radial Snapping
+      const radiusStep = parseInt(document.getElementById('inputRadius').value) || 35;
+      const sectors = parseInt(document.getElementById('inputSectors').value) || 8;
+
+      const dist = Math.sqrt(x * x + y * y);
+      const round = Math.round(dist / radiusStep);
+      const snappedDist = round * radiusStep;
+
+      let currentAngleRad = Math.atan2(y, x);
+      if (currentAngleRad < 0) currentAngleRad += 2 * Math.PI;
+
+      const sectorAngleRad = (2 * Math.PI) / sectors;
+      const sectorIndex = Math.round(currentAngleRad / sectorAngleRad);
+      const snappedAngleRad = sectorIndex * sectorAngleRad;
+
+      const snappedX = snappedDist * Math.cos(snappedAngleRad);
+      const snappedY = snappedDist * Math.sin(snappedAngleRad);
+
+      let angleDeg = 0;
+      if (state.rotation === 'auto') {
+        // Tangent auto-rotation facing outward along radial spoke
+        angleDeg = (snappedAngleRad * 180 / Math.PI) + 90;
+      } else {
+        angleDeg = parseInt(state.rotation);
+      }
+
+      return { x: snappedX, y: snappedY, angle: angleDeg };
+    }
+  }
+
+  function handleCanvasClick(e) {
+    const coords = getSVGCoords(e);
+    const snapped = snapToGrid(coords.x, coords.y);
+
+    if (state.selectedSymbol === 'eraser') {
+      // Remove stitch near click
+      const index = state.stitches.findIndex(s => Math.hypot(s.x - snapped.x, s.y - snapped.y) < 15);
+      if (index !== -1) {
+        saveHistory();
+        state.stitches.splice(index, 1);
+        renderStitches();
+      }
+    } else {
+      // Place Stitch
+      saveHistory();
+      const newStitch = {
+        id: Date.now() + Math.random(),
+        type: state.selectedSymbol,
+        x: snapped.x,
+        y: snapped.y,
+        angle: snapped.angle,
+        color: state.color,
+        scale: state.scale
+      };
+      state.stitches.push(newStitch);
+      renderStitches();
+    }
+  }
+
+  function updateHoverPreview(e) {
+    previewLayer.innerHTML = '';
+    if (state.selectedSymbol === 'eraser') return;
+
+    const coords = getSVGCoords(e);
+    const snapped = snapToGrid(coords.x, coords.y);
+    const sym = SYMBOLS[state.selectedSymbol];
+
+    if (!sym) return;
+
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    g.setAttribute("transform", `translate(${snapped.x}, ${snapped.y}) rotate(${snapped.angle}) scale(${state.scale})`);
+    g.setAttribute("color", state.color);
+    g.innerHTML = sym.svg;
+
+    previewLayer.appendChild(g);
+  }
+
+  function renderStitches() {
+    stitchesLayer.innerHTML = '';
+
+    state.stitches.forEach(st => {
+      const sym = SYMBOLS[st.type];
+      if (!sym) return;
+
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      g.setAttribute("transform", `translate(${st.x}, ${st.y}) rotate(${st.angle}) scale(${st.scale})`);
+      g.setAttribute("color", st.color);
+      g.innerHTML = sym.svg;
+
+      stitchesLayer.appendChild(g);
+    });
+
+    updateStitchSummary();
+  }
+
+  function updateStitchSummary() {
+    const summaryList = document.getElementById('stitchSummaryList');
+    const totalCount = document.getElementById('totalStitchCount');
+
+    totalCount.textContent = `${state.stitches.length} total`;
+
+    if (state.stitches.length === 0) {
+      summaryList.innerHTML = `<p class="text-slate-400 italic">No stitches placed yet.</p>`;
+      return;
+    }
+
+    const counts = {};
+    state.stitches.forEach(st => {
+      const name = SYMBOLS[st.type]?.name || st.type;
+      counts[name] = (counts[name] || 0) + 1;
+    });
+
+    summaryList.innerHTML = '';
+    Object.keys(counts).forEach(name => {
+      const item = document.createElement('div');
+      item.className = "flex items-center justify-between py-0.5 border-b border-slate-100";
+      item.innerHTML = `
+          <span class="font-medium text-slate-700">${name}</span>
+          <span class="font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded text-[10px]">${counts[name]}</span>
+        `;
+      summaryList.appendChild(item);
+    });
+  }
+
+  // --- ZOOM, PAN, & HISTORY ---
+  function zoom(delta) {
+    state.zoomLevel = Math.min(Math.max(0.4, state.zoomLevel + delta), 3.0);
+    document.getElementById('zoomText').textContent = `${Math.round(state.zoomLevel * 100)}%`;
+    updateTransform();
+  }
+
+  function resetZoom() {
+    state.zoomLevel = 1.0;
+    state.panX = 0;
+    state.panY = 0;
+    document.getElementById('zoomText').textContent = '100%';
+    updateTransform();
+  }
+
+  function centerCanvas() {
+    const rect = svgCanvas.getBoundingClientRect();
+    viewportGroup.setAttribute("transform", `translate(${rect.width / 2}, ${rect.height / 2}) scale(1)`);
+  }
+
+  function updateTransform() {
+    const rect = svgCanvas.getBoundingClientRect();
+    const cx = rect.width / 2 + state.panX;
+    const cy = rect.height / 2 + state.panY;
+    viewportGroup.setAttribute("transform", `translate(${cx}, ${cy}) scale(${state.zoomLevel})`);
+  }
+
+  function saveHistory() {
+    state.history.push(JSON.stringify(state.stitches));
+    if (state.history.length > 30) state.history.shift();
+  }
+
+  function undo() {
+    if (state.history.length > 0) {
+      state.stitches = JSON.parse(state.history.pop());
+      renderStitches();
+    }
+  }
+
+  function clearCanvas() {
+    if (state.stitches.length === 0) return;
+    if (confirm('Are you sure you want to clear the design canvas?')) {
+      saveHistory();
+      state.stitches = [];
+      renderStitches();
+    }
+  }
+
+  // --- EXPORT FUNCTIONS ---
+  function exportSVG() {
+    const cloneSvg = svgCanvas.cloneNode(true);
+    const svgData = new XMLSerializer().serializeToString(cloneSvg);
+    const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `crochet-pattern-${state.gridType}.svg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  function exportPNG() {
+    const svgData = new XMLSerializer().serializeToString(svgCanvas);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const img = new Image();
+
+    const rect = svgCanvas.getBoundingClientRect();
+    canvas.width = rect.width * 2;
+    canvas.height = rect.height * 2;
+
+    img.onload = () => {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      const a = document.createElement("a");
+      a.download = `crochet-pattern-${state.gridType}.png`;
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+    };
+
+    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
+  }
+</script>
+</body>
+</html>
